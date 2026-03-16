@@ -93,7 +93,8 @@ function openViewer(row, idx) {
 
   const p = projects[idx];
   document.getElementById('viewer-title').textContent = p.url_file.split('/').pop();
-  frame.src = p.url_file;
+  const base = window.location.origin + window.location.pathname.replace(/\/$/, '');
+frame.src = base + '/' + p.url_file;
 
   panel.classList.add('open');
   setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
