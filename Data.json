@@ -1,0 +1,26 @@
+{
+  "temas": [
+    { "id": "de",    "label": "Data engineering" }
+
+  ],
+  "proyectos": [
+    {
+      "titulo": "SQL-Data-Warehouse",
+      "descripcion": "This project demonstrates a comprehensive data storage and analytics solution, from building a data warehouse to generating actionable insights. Designed as a portfolio project, it highlights industry best practices in data engineering and analytics.",
+      "tecnologias": ["SQL server"],
+      "temas": ["de"],
+      "url_github": "https://github.com/JuanMurcia-999/SQL-Data-Warehouse",
+      "url_file": "/public/docs/SQL-Data-Warehouse.html",
+      "fecha": ""
+    },
+     {
+      "titulo": "Onprem-to-azure-cdc",
+      "descripcion": "Sistema de replicación near real-time desde SQL Server on-premise hacia Azure SQL Database usando CDC (Change Data Capture) y Python.",
+      "tecnologias": ["SQL server", "python"],
+      "temas": ["de"],
+      "url_github": "https://github.com/JuanMurcia-999/onprem-to-azure-cdc",
+      "url_file": "/public/docs/onprem-to-azure-cdc.html",
+      "fecha": ""
+    }
+  ]
+}

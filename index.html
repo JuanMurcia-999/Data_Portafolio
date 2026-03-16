@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio — Editorial</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="logo">Juan Camilo Murcia — Portfolio</div>
+  <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">
+    <span class="toggle-icon" id="toggle-icon">☽</span>
+    <span id="toggle-label">Oscuro</span>
+  </button>
+</header>
+
+<!-- Filtros: se construyen dinámicamente desde data.json -->
+<div class="filters-bar" id="filters-bar"></div>
+
+<!-- Proyectos: se construyen dinámicamente desde data.json -->
+<div class="projects-wrap" id="projects-wrap"></div>
+
+<!-- Viewer: se mueve dinámicamente con JS tras cada proyecto -->
+<div class="viewer-panel" id="viewer-panel">
+  <div class="viewer-header">
+    <span class="viewer-title" id="viewer-title"></span>
+    <button class="viewer-close" onclick="closeViewer()">✕ cerrar</button>
+  </div>
+  <div class="viewer-iframe-wrap" id="iframe-wrap">
+    <iframe id="notebook-frame" src="about:blank" title="Notebook Viewer"></iframe>
+  </div>
+  <div class="viewer-resize"></div>
+</div>
+
+<script src="main.js"></script>
+<script src="theme.js"></script>
+</body>
+</html>

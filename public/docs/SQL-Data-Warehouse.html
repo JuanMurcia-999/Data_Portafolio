@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Warehouse Project</title>
+  <link rel="stylesheet" href="notebook.css">
+</head>
+<body>
+<div class="nb-wrap">
+
+  <header class="nb-header">
+    <h1>Data Warehouse Project</h1>
+    <div class="nb-meta">
+      <span>Data Engineering</span>
+      <span>SQL Server · Medallion Architecture</span>
+      <span>ETL · Star Schema</span>
+    </div>
+  </header>
+
+  <p class="lead">
+    Solución integral de almacenamiento y analítica de datos, desde la construcción de un data warehouse
+    hasta la generación de insights accionables. Diseñado como proyecto de portafolio, destaca buenas
+    prácticas de ingeniería de datos y analítica.
+  </p>
+
+  <hr>
+
+  <h2>Data Architecture</h2>
+
+  <p>La arquitectura sigue el patrón <strong>Medallion Architecture</strong> con capas
+  <strong>Bronze</strong>, <strong>Silver</strong> y <strong>Gold</strong>:</p>
+
+  <figure>
+    <img src="../img/SQL-Data-Warehouse/Architecture.png" alt="Data Architecture">
+    <figcaption>Fig. 1 — Arquitectura Medallion del Data Warehouse.</figcaption>
+  </figure>
+
+  <ol>
+    <li><strong>Bronze Layer:</strong> Almacena los datos crudos tal como llegan desde los sistemas origen. Los datos se ingieren desde archivos CSV hacia SQL Server.</li>
+    <li><strong>Silver Layer:</strong> Incluye procesos de limpieza, estandarización y normalización para preparar los datos para el análisis.</li>
+    <li><strong>Gold Layer:</strong> Contiene datos listos para negocio, modelados en un esquema estrella para reporting y analítica.</li>
+  </ol>
+
+  <hr>
+
+  <h2>Project Overview</h2>
+
+  <p>Este proyecto involucra:</p>
+
+  <ol>
+    <li><strong>Data Architecture:</strong> Diseño de un Data Warehouse moderno usando Medallion Architecture con capas Bronze, Silver y Gold.</li>
+    <li><strong>ETL Pipelines:</strong> Extracción, transformación y carga de datos desde los sistemas origen hacia el warehouse.</li>
+    <li><strong>Data Modeling:</strong> Desarrollo de tablas de hechos y dimensiones optimizadas para consultas analíticas.</li>
+  </ol>
+
+  <hr>
+
+  <h2>Project Requirements</h2>
+
+  <h3>Building the Data Warehouse (Data Engineering)</h3>
+
+  <h4>Objective</h4>
+  <p>Desarrollar un data warehouse moderno usando SQL Server para consolidar datos de ventas,
+  habilitando reporting analítico y toma de decisiones informada.</p>
+
+  <h4>Specifications</h4>
+  <ul>
+    <li><strong>Data Sources:</strong> Importar datos desde dos sistemas origen (ERP y CRM) provistos como archivos CSV.</li>
+    <li><strong>Data Quality:</strong> Limpiar y resolver problemas de calidad de datos previo al análisis.</li>
+    <li><strong>Integration:</strong> Combinar ambas fuentes en un modelo de datos unificado, diseñado para consultas analíticas.</li>
+    <li><strong>Scope:</strong> Enfocado únicamente en el dataset más reciente; no se requiere historización.</li>
+    <li><strong>Documentation:</strong> Documentación clara del modelo de datos para stakeholders de negocio y equipos de analítica.</li>
+  </ul>
+
+  <hr>
+
+  <h2>Repository Structure</h2>
+
+  <pre data-lang="bash">
+data-warehouse-project/
+│
+├── datasets/                    # Raw datasets (ERP and CRM data)
+│
+├── docs/                        # Project documentation and architecture
+│   ├── Architecture.png         # Project architecture diagram
+│   ├── data_catalog.md          # Dataset catalog with field descriptions
+│   ├── data_flow.drawio         # Data flow diagram
+│   ├── data_models.drawio       # Data models (star schema)
+│   └── naming-conventions.md   # Naming guidelines for tables, columns and files
+│
+├── scripts/                     # SQL scripts for ETL and transformations
+│   ├── bronze/                  # Scripts for extracting and loading raw data
+│   ├── silver/                  # Scripts for cleaning and transforming data
+│   └── gold/                    # Scripts for creating analytical models
+│
+├── tests/                       # Test scripts and quality files
+│
+└── README.md                    # Project overview and instructions</pre>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>onprem-to-azure-cdc</title>
+  <link rel="stylesheet" href="notebook.css">
+</head>
+<body>
+<div class="nb-wrap">
+
+  <!-- Cabecera -->
+  <header class="nb-header">
+    <h1>onprem-to-azure-cdc</h1>
+    <div class="nb-meta">
+      <span>Ingeniería de Datos</span>
+      <span>Python · SQL Server · Azure</span>
+      <span>systemd · CDC</span>
+    </div>
+  </header>
+
+  <!-- Resumen -->
+  <p class="lead">
+    Sistema de replicación near real-time desde SQL Server on-premise en servidor con Ubuntu Server
+    hacia Azure SQL Database. El proyecto captura cambios en tablas de negocio usando CDC (Change Data Capture)
+    y los replica automáticamente en la nube cada minuto, sin exponer el servidor local a internet.
+  </p>
+
+  <p>Fue desarrollado como proyecto de práctica para profundizar en ingeniería de datos,
+  replicación de bases de datos y automatización en entornos Linux.</p>
+
+  <hr>
+
+  <!-- Diagrama -->
+  <h2>Diagrama de flujo</h2>
+  <figure>
+    <img src="Diagrama_sin_ttulo.drawio.png" alt="Diagrama de flujo del sistema CDC">
+    <figcaption>Fig. 1 — Flujo de replicación on-premise → Azure SQL Database.</figcaption>
+  </figure>
+
+  <hr>
+
+  <!-- Stack -->
+  <h2>Stack tecnológico</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Componente</th>
+        <th>Tecnología</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Base de datos origen</td><td>SQL Server 2025 on Linux (Ubuntu Server)</td></tr>
+      <tr><td>Base de datos destino</td><td>Azure SQL Database</td></tr>
+      <tr><td>Captura de cambios</td><td>SQL Server CDC</td></tr>
+      <tr><td>Lenguaje</td><td>Python 3</td></tr>
+      <tr><td>Orquestación</td><td>systemd timer</td></tr>
+      <tr><td>Pruebas</td><td>pytest + pytest-mock</td></tr>
+      <tr><td>Gestión de entorno</td><td>python-dotenv</td></tr>
+    </tbody>
+  </table>
+
+  <hr>
+
+  <!-- CDC -->
+  <h2>Cómo funciona CDC</h2>
+
+  <p>CDC (Change Data Capture) no depende de timestamps ni columnas especiales en las tablas.
+  Lee directamente el <strong>transaction log</strong> de SQL Server y registra cada cambio
+  en tablas internas con la siguiente información:</p>
+
+  <ul>
+    <li><code>__$operation</code> → Tipo de cambio: INSERT, UPDATE, DELETE numeradas (1, 2, 3)</li>
+    <li><code>__$start_lsn</code> → LSN (Log Sequence Number) que identifica la posición exacta en el log</li>
+    <li>Columnas de la tabla → Valores al momento del cambio</li>
+  </ul>
+
+  <p>El sistema usa el LSN como <strong>watermark</strong> por tabla para saber exactamente desde
+  qué punto leer en cada ciclo, garantizando que ningún cambio se pierda ni se duplique.</p>
+
+  <hr>
+
+  <!-- Estructura -->
+  <h2>Estructura del proyecto</h2>
+
+  <pre data-lang="bash">
+onprem-to-azure-cdc/
+├── main.py                  → Punto de entrada
+├── synchronizer.py          → Lógica principal de sincronización
+├── db_connections.py        → Gestión de conexiones
+├── watermark_manager.py     → Control del LSN por tabla
+├── cdc_utils.py             → Utilidades CDC
+├── logger.py                → Logs con rotación automática
+├── watermark.json           → Estado de LSN (generado en runtime)
+├── .env                     → Variables de entorno
+└── tests/
+    ├── test_cdc_utils.py
+    ├── test_watermark_manager.py
+    └── test_synchronizer.py
+└── config_systemd/
+    ├── cdc_homecenter.timer
+    └── cdc_homecenter.service</pre>
+
+  <hr>
+
+  <!-- Por qué este enfoque -->
+  <h2>¿Por qué este enfoque y no otro?</h2>
+
+  <blockquote>
+    <p>Durante el desarrollo se evaluaron varias alternativas antes de llegar a la solución final
+    basada en Python + CDC. Estas son las razones por las que cada opción fue descartada.</p>
+  </blockquote>
+
+  <h3>❌ Replicación Transaccional de SQL Server</h3>
+  <p>Es la opción más directa para replicar hacia Azure SQL Database como suscriptor. Sin embargo,
+  los agentes de replicación tienen soporte limitado y bugs conocidos en Linux. Durante este proyecto
+  se evidenció que la capa de compatibilidad <code>sqlpal.dll</code> genera crashes en SQL Server 2025
+  sobre Ubuntu 24.04, lo que la hace inviable para este entorno.</p>
+
+  <h3>❌ Azure Data Factory (ADF) con Self-Hosted IR</h3>
+  <p>ADF es la herramienta nativa de Azure para este tipo de pipelines. El problema es que el
+  <strong>Self-Hosted Integration Runtime solo está disponible para Windows</strong>
+  (10, 11, Server 2016/2019/2022/2025). El servidor on-premise corre Ubuntu Server, por lo que
+  no es posible instalarlo directamente. Una alternativa sería una VM Windows intermediaria,
+  pero añade costo y complejidad innecesarios para este proyecto.</p>
+
+  <h3>❌ Azure Database Migration Service (DMS)</h3>
+  <p>DMS corre completamente del lado de Azure y no requiere instalar nada on-premise. Sin embargo,
+  para conectarse al servidor local necesita que el puerto 1433 sea accesible desde internet,
+  lo que implica modificar el router, exponer una IP dinámica y abrir el firewall. Para un servidor
+  doméstico de práctica esto representa un riesgo de seguridad innecesario.</p>
+
+  <h3>❌ Debezium + Azure Event Hubs</h3>
+  <p>Debezium es una solución moderna y robusta que corre en Linux vía Docker y lee el transaction log
+  igual que CDC. Es la alternativa más válida técnicamente, pero agrega una capa de infraestructura
+  (Kafka/Event Hubs) que excede el alcance de este proyecto de práctica.</p>
+
+  <h3>✅ Python + CDC + systemd</h3>
+  <p>La solución elegida combina lo mejor de cada alternativa sin sus desventajas: usa CDC nativo de
+  SQL Server (estable en Linux), corre directamente en el servidor on-premise sin exponer puertos,
+  no depende de herramientas de terceros y es completamente personalizable. El costo operativo es
+  prácticamente cero.</p>
+
+  <hr>
+
+  <!-- Decisiones de diseño -->
+  <h2>Decisiones de diseño</h2>
+
+  <p class="note"><strong>¿Por qué CDC y no timestamps?</strong><br>
+  CDC no requiere modificar el esquema de las tablas existentes. Con 30M de registros en producción,
+  agregar una columna <code>UpdatedAt</code> hubiera requerido una migración costosa y un nuevo
+  backup completo hacia Azure.</p>
+
+  <p class="note"><strong>¿Por qué Python y no ADF?</strong><br>
+  El Self-Hosted Integration Runtime de Azure Data Factory solo está disponible para Windows.
+  El servidor on-premise corre Ubuntu Server, por lo que ADF quedó descartado.</p>
+
+  <p class="note"><strong>¿Por qué systemd y no Airflow?</strong><br>
+  Para un ciclo de 1 minuto en un servidor sin infraestructura adicional, systemd es suficiente,
+  más liviano y ya está disponible en cualquier distribución Linux sin instalación extra.</p>
+
+  <p class="note"><strong>¿Por qué watermark por tabla y no global?</strong><br>
+  Permite que una tabla falle sin afectar las demás. Cada tabla mantiene su propio LSN,
+  lo que facilita el diagnóstico de errores y el reintento granular.</p>
+
+  <hr>
+
+  <!-- Errores -->
+  <h2>Errores encontrados durante el desarrollo</h2>
+
+  <h3>1. Crash de SQL Server al habilitar el agente</h3>
+
+  <p><strong>Síntoma:</strong> SQL Server caía con exit-code al habilitar <code>sqlagent.enabled = true</code>.</p>
+  <p><strong>Causa raíz:</strong> El directorio <code>/var/opt/mssql/</code> tenía permisos incorrectos
+  después de una instalación en SQL Server 2025. La capa de compatibilidad <code>sqlpal.dll</code>
+  (que emula Windows Registry en Linux) no podía escribir en el hive de configuración.</p>
+  <p><strong>Solución:</strong></p>
+
+  <pre data-lang="bash">
+sudo chown -R mssql:mssql /var/opt/mssql/
+sudo chmod -R 770 /var/opt/mssql/</pre>
+
+  <h3>2. Self-Hosted IR de ADF no disponible en Linux</h3>
+
+  <p><strong>Síntoma:</strong> El instalador descargado resultó ser un MSI de Windows.</p>
+  <p><strong>Causa raíz:</strong> Azure Data Factory Self-Hosted Integration Runtime solo soporta
+  Windows (10, 11, Server 2016/2019/2022/2025).</p>
+  <p><strong>Solución:</strong> Se descartó ADF y se construyó el pipeline directamente en Python
+  usando <code>pymssql</code> y CDC.</p>
+
+  <h3>3. <code>mssql-server-agent</code> no disponible como paquete separado</h3>
+
+  <p><strong>Síntoma:</strong> <code>apt-get install mssql-server-agent</code> fallaba con
+  "no installation candidate".</p>
+  <p><strong>Causa raíz:</strong> En SQL Server 2025 el agente viene integrado en el motor y se
+  activa por configuración, no como paquete separado.</p>
+  <p><strong>Solución:</strong></p>
+
+  <pre data-lang="bash">
+sudo /opt/mssql/bin/mssql-conf set sqlagent.enabled true
+sudo systemctl restart mssql-server</pre>
+
+  <h3>4. Error al deshabilitar CDC al cambiar de esquema</h3>
+
+  <p><strong>Síntoma:</strong> <code>sp_cdc_disable_table</code> fallaba indicando que la tabla
+  no existía en <code>dbo</code>.</p>
+  <p><strong>Causa raíz:</strong> Las tablas ya habían sido movidas al esquema <code>hcr</code>
+  antes de deshabilitar CDC, pero el comando usaba el esquema original <code>dbo</code>.</p>
+  <p><strong>Solución:</strong> Usar el nuevo esquema en el comando de deshabilitación:</p>
+
+  <pre data-lang="sql">
+EXEC sys.sp_cdc_disable_table
+    @source_schema    = N'hcr',
+    @source_name      = N'families',
+    @capture_instance = N'dbo_families';</pre>
+
+  <hr>
+
+  <!-- Resultados -->
+  <section class="nb-conclusion">
+    <h2>Resultados</h2>
+    <ul>
+      <li>✅ Sincronización near real-time con latencia máxima de 1 minuto</li>
+      <li>✅ Detección dinámica de tablas CDC sin hardcodear nombres</li>
+      <li>✅ Soporte para INSERT, UPDATE y DELETE</li>
+      <li>✅ Logs con rotación automática y resumen por ciclo</li>
+      <li>✅ Pruebas unitarias con mocks para todas las funciones críticas</li>
+      <li>✅ Servicio autónomo administrado por systemd</li>
+    </ul>
+  </section>
+
+  <hr>
+
+  
+
+</div>
+</body>
+</html>
