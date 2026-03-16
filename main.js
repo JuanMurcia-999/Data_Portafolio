@@ -5,7 +5,7 @@ let isResizing = false;
 // ── LOAD & INIT ──────────────────────────────────────────────
 fetch('data.json')
   .then(r => r.json())
-  .then(data => {
+  .then(Data => {
     buildFilters(data.temas);
     buildProjects(data.proyectos);
     bindResize();
