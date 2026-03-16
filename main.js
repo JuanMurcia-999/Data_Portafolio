@@ -3,9 +3,9 @@ let activeRow = null;
 let isResizing = false;
 
 // ── LOAD & INIT ──────────────────────────────────────────────
-fetch('data.json')
+fetch('Data.json')
   .then(r => r.json())
-  .then(Data => {
+  .then(data => {
     buildFilters(data.temas);
     buildProjects(data.proyectos);
     bindResize();
