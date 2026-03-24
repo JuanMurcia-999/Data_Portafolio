@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Migración PostgreSQL → MySQL con Pentaho PDI</title>
+  <link rel="stylesheet" href="notebook.css">
+</head>
+<body>
+<div class="nb-wrap">
+
+  <header class="nb-header">
+    <h1>Migración PostgreSQL → MySQL con Pentaho PDI</h1>
+    <div class="nb-meta">
+      <span>Ingeniería de Datos</span>
+      <span>PostgreSQL · MySQL · Pentaho PDI</span>
+      <span>ETL · Linux</span>
+    </div>
+  </header>
+
+  <!-- Resumen -->
+  <h2>Resumen del proyecto</h2>
+
+  <table>
+    <thead>
+      <tr><th>Campo</th><th>Detalle</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Proyecto</strong></td><td>Migración PostgreSQL → MySQL con Pentaho PDI</td></tr>
+      <tr><td><strong>Origen</strong></td><td>PostgreSQL 14+</td></tr>
+      <tr><td><strong>Destino</strong></td><td>MySQL 8</td></tr>
+      <tr><td><strong>Herramienta ETL</strong></td><td>Pentaho Data Integration (PDI/Kettle)</td></tr>
+      <tr><td><strong>Entorno</strong></td><td>Servidor Linux dedicado</td></tr>
+      <tr><td><strong>Total de tablas</strong></td><td>11</td></tr>
+      <tr><td><strong>Volumen estimado</strong></td><td>~65M registros</td></tr>
+      <tr><td><strong>Estado</strong></td><td>🟡 En planificación</td></tr>
+    </tbody>
+  </table>
+
+  <hr>
+
+  <!-- Índice -->
+  <h2>Índice de secciones</h2>
+  <ol>
+    <li>Arquitectura general de la ETL</li>
+    <li>Esquema de base de datos y relaciones</li>
+    <li>Estrategia de migración por tabla</li>
+    <li>Mapeo de tipos de datos PostgreSQL → MySQL</li>
+    <li>Estructura de archivos PDI</li>
+    <li>Configuración de conexiones</li>
+    <li>Estrategia de validación y checksums</li>
+    <li>Orden de ejecución y dependencias FK</li>
+    <li>Comandos de ejecución (Linux)</li>
+    <li>Control de errores y reintentos</li>
+    <li>Log de ejecución y resultados</li>
+  </ol>
+
+  <hr>
+
+  <!-- 1 -->
+  <h2>1. Arquitectura general de la ETL</h2>
+
+  <p>La ETL está organizada en un <strong>Job maestro</strong> (<code>main_migration.kjb</code>) que orquesta
+  la ejecución completa en fases secuenciales respetando las dependencias por Foreign Key.</p>
+
+  <pre data-lang="bash">
+main_migration.kjb
+  │
+  ├── FASE 1: Tablas de referencia (8 tablas — paralelo)
+  │     brands · sections · families · categories
+  │     subcategories · customers · etl_control_migracion
+  │
+  ├── FASE 2: products (~5M — 2 rangos LIMIT/OFFSET)
+  │     + product_hierarchy + product_hierarchy_link
+  │
+  ├── FASE 3: sales_header (~30M — 4 rangos paralelos)
+  │
+  └── FASE 4: sales_detail (~30M — 4 rangos paralelos)
+              ↑ depende de sales_header + products</pre>
+
+  <hr>
+
+  <!-- 2 -->
+  <h2>2. Esquema de base de datos y relaciones</h2>
+
+  <h3>Tablas de referencia (pequeñas)</h3>
+  <table>
+    <thead>
+      <tr><th>Tabla</th><th>PK</th><th>Columnas clave</th><th>Notas</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>brands</code></td><td><code>id_brand</code> (integer)</td><td><code>brand_name</code> varchar(100)</td><td>Catálogo de marcas</td></tr>
+      <tr><td><code>sections</code></td><td><code>id_section</code> (integer)</td><td><code>sect_name</code> text</td><td>Catálogo de secciones</td></tr>
+      <tr><td><code>families</code></td><td><code>id_family</code> (integer)</td><td><code>family_name</code> text</td><td>Catálogo de familias</td></tr>
+      <tr><td><code>categories</code></td><td><code>id_category</code> (integer)</td><td><code>cat_name</code> text</td><td>Catálogo de categorías</td></tr>
+      <tr><td><code>subcategories</code></td><td><code>id_subcategory</code> (integer)</td><td><code>subcategory_name</code> text</td><td>Catálogo de subcategorías</td></tr>
+      <tr><td><code>customers</code></td><td><code>id_customer</code> varchar(10)</td><td>razon_social, numero_identificacion, correo_electronico</td><td>PK es texto, no integer</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Tabla mediana</h3>
+  <table>
+    <thead>
+      <tr><th>Tabla</th><th>PK</th><th>FK</th><th>Volumen estimado</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>products</code></td><td><code>sku</code> (text)</td><td><code>id_brand</code> → brands</td><td>~5M registros</td></tr>
+      <tr><td><code>product_hierarchy</code></td><td><code>id_hierarchy</code> (integer)</td><td>id_section, id_family, id_category, id_subcategory</td><td>Pequeña</td></tr>
+      <tr><td><code>product_hierarchy_link</code></td><td>— (tabla puente)</td><td>sku → products, id_hierarchy → product_hierarchy</td><td>Pequeña</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Tablas grandes</h3>
+  <table>
+    <thead>
+      <tr><th>Tabla</th><th>PK</th><th>FK</th><th>Volumen estimado</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>sales_header</code></td><td><code>id_sale</code> (bigint)</td><td><code>id_customer</code> → customers</td><td>~30M registros</td></tr>
+      <tr><td><code>sales_detail</code></td><td><code>id_sale_detail</code> (bigint)</td><td><code>id_sale</code> → sales_header, <code>sku</code> → products</td><td>~30M registros</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Diagrama de dependencias FK</h3>
+  <pre data-lang="text">
+brand  sections  families  categories  subcategories  customers
+  │       │         │           │              │           │
+  └──→ products    └───────────┴──────────────┘           │
+           │                   │                          │
+           │        product_hierarchy                      │
+           │                   │                          │
+           │       product_hierarchy_link                  │
+           │                                              │
+           └─────────────────────────────→ sales_header ←─┘
+                                                 │
+                                           sales_detail</pre>
+
+  <hr>
+
+  <!-- 3 -->
+  <h2>3. Estrategia de migración por tabla</h2>
+
+  <table>
+    <thead>
+      <tr><th>Tabla</th><th>Estrategia</th><th>Paralelismo</th><th>Commit size</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>brands</td><td>Carga directa</td><td>—</td><td>1.000</td></tr>
+      <tr><td>sections</td><td>Carga directa</td><td>—</td><td>1.000</td></tr>
+      <tr><td>families</td><td>Carga directa</td><td>—</td><td>1.000</td></tr>
+      <tr><td>categories</td><td>Carga directa</td><td>—</td><td>1.000</td></tr>
+      <tr><td>subcategories</td><td>Carga directa</td><td>—</td><td>1.000</td></tr>
+      <tr><td>customers</td><td>Carga directa</td><td>—</td><td>1.000</td></tr>
+      <tr><td>etl_control_migracion</td><td>Carga directa</td><td>—</td><td>1.000</td></tr>
+      <tr><td>products</td><td>LIMIT/OFFSET por bloques</td><td>—</td><td>1.000</td></tr>
+      <tr><td>product_hierarchy</td><td>Carga directa</td><td>—</td><td>1.000</td></tr>
+      <tr><td>product_hierarchy_link</td><td>Carga directa</td><td>—</td><td>1.000</td></tr>
+      <tr><td>sales_header</td><td>Rangos por id_sale</td><td>4 instancias</td><td>2.000</td></tr>
+      <tr><td>sales_detail</td><td>Rangos por id_sale_detail</td><td>4 instancias</td><td>2.000</td></tr>
+    </tbody>
+  </table>
+
+  <hr>
+
+  <!-- 4 -->
+  <h2>4. Mapeo de tipos de datos PostgreSQL → MySQL</h2>
+
+  <table>
+    <thead>
+      <tr><th>Tipo PostgreSQL</th><th>Tipo MySQL 8</th><th>Notas</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>integer</code></td><td><code>INT</code></td><td>Directo</td></tr>
+      <tr><td><code>bigint</code></td><td><code>BIGINT</code></td><td>Directo</td></tr>
+      <tr><td><code>serial</code> / <code>bigserial</code></td><td><code>INT AUTO_INCREMENT</code> / <code>BIGINT AUTO_INCREMENT</code></td><td>Ajustar después de carga</td></tr>
+      <tr><td><code>text</code></td><td><code>LONGTEXT</code></td><td>Sin límite de longitud</td></tr>
+      <tr><td><code>character varying(n)</code></td><td><code>VARCHAR(n)</code></td><td>Directo</td></tr>
+      <tr><td><code>numeric(p,s)</code></td><td><code>DECIMAL(p,s)</code></td><td>Directo</td></tr>
+      <tr><td><code>timestamp without time zone</code></td><td><code>DATETIME</code></td><td>Sin conversión de TZ</td></tr>
+      <tr><td><code>boolean</code></td><td><code>TINYINT(1)</code></td><td>0/1</td></tr>
+    </tbody>
+  </table>
+
+  <hr>
+
+  <!-- 5 -->
+  <h2>5. Estructura de archivos PDI</h2>
+
+  <blockquote>
+    <p>Actualizada para reflejar los jobs de validación independientes por fase.</p>
+  </blockquote>
+
+  <pre data-lang="bash">
+migration_project/
+  ├── jobs/
+  │     ├── main_migration.kjb              ← Job maestro
+  │     ├── job_fase1_referencias.kjb       ← 8 tablas pequeñas
+  │     ├── job_fase2_products.kjb          ← products + hierarchy
+  │     ├── job_fase3_sales_header.kjb      ← sales_header
+  │     └── job_fase4_sales_detail.kjb      ← sales_detail
+  │
+  ├── transformations/
+  │     ├── tr_brands.ktr
+  │     ├── tr_sections.ktr
+  │     ├── tr_families.ktr
+  │     ├── tr_categories.ktr
+  │     ├── tr_subcategories.ktr
+  │     ├── tr_customers.ktr
+  │     ├── tr_etl_control.ktr
+  │     ├── tr_products.ktr
+  │     ├── tr_product_hierarchy.ktr
+  │     ├── tr_product_hierarchy_link.ktr
+  │     ├── tr_sales_header.ktr
+  │     └── tr_sales_detail.ktr
+  │
+  ├── validation/
+  │     └── tr_checksum_validation.ktr      ← Validación de checksums
+  │
+  └── config/
+        ├── db_postgres.properties          ← Conexión origen
+        └── db_mysql.properties             ← Conexión destino</pre>
+
+  <hr>
+
+  <!-- 6 -->
+  <h2>6. Configuración de conexiones</h2>
+
+  <h3>PostgreSQL (origen)</h3>
+  <pre data-lang="properties">
+db.postgres.host=&lt;HOST&gt;
+db.postgres.port=5432
+db.postgres.name=&lt;DB_NAME&gt;
+db.postgres.user=&lt;USER&gt;
+db.postgres.password=&lt;PASSWORD&gt;
+db.postgres.schema=public</pre>
+
+  <h3>MySQL (destino)</h3>
+  <pre data-lang="properties">
+db.mysql.host=&lt;HOST&gt;
+db.mysql.port=3306
+db.mysql.name=&lt;DB_NAME&gt;
+db.mysql.user=&lt;USER&gt;
+db.mysql.password=&lt;PASSWORD&gt;</pre>
+
+  <hr>
+
+  <!-- 7 -->
+  <h2>7. Estrategia de validación y checksums</h2>
+
+  <p>Para cada tabla se calculan las siguientes métricas tanto en origen (PostgreSQL) como en
+  destino (MySQL) y se comparan:</p>
+
+  <table>
+    <thead>
+      <tr><th>Métrica</th><th>Qué detecta</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>COUNT(*)</code></td><td>Filas faltantes o duplicadas</td></tr>
+      <tr><td><code>SUM(PK)</code></td><td>PKs alteradas</td></tr>
+      <tr><td><code>SUM(columna_monetaria)</code></td><td>Valores numéricos corruptos</td></tr>
+      <tr><td><code>MAX(PK)</code></td><td>Que el último registro llegó</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Query de validación (ejemplo sales_header)</h3>
+  <pre data-lang="sql">
+-- PostgreSQL / MySQL (misma query)
+SELECT
+  COUNT(*)          AS total_rows,
+  SUM(id_sale)      AS sum_pk,
+  SUM(total_amount) AS sum_amount,
+  MAX(id_sale)      AS max_pk
+FROM sales_header;</pre>
+
+  <p>Los resultados se registran en <code>etl_control_migracion</code> con los campos
+  <code>hash_src</code> y <code>hash_dst</code>.</p>
+
+  <hr>
+
+  <!-- 8 -->
+  <h2>8. Orden de ejecución y dependencias FK</h2>
+
+  <pre data-lang="bash">
+FASE 1 (paralelo)
+  brands + sections + families + categories + subcategories + customers + etl_control_migracion
+  ↓ (esperar que terminen todos)
+FASE 2 (secuencial interno)
+  products  →  product_hierarchy  →  product_hierarchy_link
+  ↓
+FASE 3
+  sales_header (4 rangos en paralelo por id_sale)
+  ↓ (esperar que termine completo)
+FASE 4
+  sales_detail (4 rangos en paralelo por id_sale_detail)</pre>
+
+  <p class="warn">Las FK en MySQL deben estar deshabilitadas durante la carga
+  (<code>SET foreign_key_checks = 0</code>) y reactivarse al finalizar todo el proceso.</p>
+
+  <hr>
+
+  <!-- 9 -->
+  <h2>9. Comandos de ejecución (Linux)</h2>
+
+  <pre data-lang="bash">
+# Ejecutar el Job maestro completo
+/opt/pentaho/data-integration/kitchen.sh \
+  -file=/ruta/jobs/main_migration.kjb \
+  -level=Basic \
+  >> /var/log/migration/migration_$(date +%Y%m%d_%H%M%S).log 2>&1
+
+# Ejecutar sales_header en 4 rangos paralelos
+kitchen.sh -file=job_fase3_sales_header.kjb -param:MIN_ID=0        -param:MAX_ID=7500000  &
+kitchen.sh -file=job_fase3_sales_header.kjb -param:MIN_ID=7500001  -param:MAX_ID=15000000 &
+kitchen.sh -file=job_fase3_sales_header.kjb -param:MIN_ID=15000001 -param:MAX_ID=22500000 &
+kitchen.sh -file=job_fase3_sales_header.kjb -param:MIN_ID=22500001 -param:MAX_ID=30000000 &
+wait</pre>
+
+  <hr>
+
+  <!-- 10 -->
+  <h2>10. Control de errores y reintentos</h2>
+
+  <ul>
+    <li>Cada transformación escribe registros fallidos en una tabla <code>migration_errors</code> en MySQL.</li>
+    <li>La tabla <code>etl_control_migracion</code> registra el estado por tabla: <code>PENDING</code>, <code>RUNNING</code>, <code>DONE</code>, <code>ERROR</code>.</li>
+    <li>En caso de fallo, la transformación es <strong>idempotente</strong>: usa <code>INSERT IGNORE</code> o <code>ON DUPLICATE KEY UPDATE</code> para poder relanzarse sin duplicados.</li>
+    <li>Antes de reintentar una tabla, verificar que el estado en <code>etl_control_migracion</code> sea <code>ERROR</code> y limpiar parcialmente si aplica.</li>
+  </ul>
+
+  <hr>
+
+  <!-- 11 -->
+  <h2>11. Log de ejecución y resultados</h2>
+
+  <table>
+    <thead>
+      <tr><th>Tabla</th><th>Filas origen</th><th>Filas destino</th><th>Checksum origen</th><th>Checksum destino</th><th>Estado</th><th>Fecha inicio</th><th>Fecha fin</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>brands</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>sections</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>families</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>categories</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>subcategories</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>customers</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>etl_control_migracion</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>products</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>product_hierarchy</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>product_hierarchy_link</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>sales_header</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+      <tr><td>sales_detail</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Pendiente</td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+
+
+
+
+</div>
+</body>
+</html>

@@ -13,6 +13,8 @@
       "url_file": "/public/docs/SQL-Data-Warehouse.html",
       "fecha": ""
     },
+
+
      {
       "titulo": "Onprem-to-azure-cdc",
       "descripcion": "Sistema de replicación near real-time desde SQL Server on-premise hacia Azure SQL Database usando CDC (Change Data Capture) y Python.",
@@ -21,6 +23,17 @@
       "url_github": "https://github.com/JuanMurcia-999/onprem-to-azure-cdc",
       "url_file": "/public/docs/onprem-to-azure-cdc.html",
       "fecha": ""
-    }
+    },
+
+    
+     {
+      "titulo": "Migración PostgreSQL → MySQL con Pentaho PDI",
+      "descripcion": "Proyecto de migración de base de datos relacional desde PostgreSQL 14+ hacia MySQL 8 utilizando Pentaho Data Integration (PDI/Kettle) como herramienta ETL. La migración cubre ~65M de registros distribuidos en 10 tablas",
+      "tecnologias": ["PostgreSQL","MySQL", "Pentaho Data Integration"],
+      "temas": ["de"],
+      "url_github": "https://github.com/JuanMurcia-999/Migracion_Pentaho-PDI-",
+      "url_file": "/public/docs/Migracion_main.html",
+      "fecha": ""
+    } 
   ]
 }
